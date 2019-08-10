@@ -1,43 +1,32 @@
-from setuptools import find_packages, setup, Extension
+from Cython.Build import cythonize
+from distutils.command.build_ext import build_ext
+from setuptools import Extension, setup, find_packages
 import numpy
+import sys
 
 
-# Text Vocabulary Extensions
-extensions = [
-    Extension(
-        'nlpy.encoder',
-        sources=['nlpy/encoder.pyx'],
-        include_dirs=[numpy.get_include()]
-    ),
-
-    Extension(
-        'nlpy.tokenizer',
-        sources=['nlpy/tokenizer.pyx'],
-        include_dirs=[numpy.get_include()]
+def get_extensions():
+    # White Space Tokenizer
+    whitespace_tokenizer_module = Extension(
+        'nlpy.tokenization_whitespace',
+        sources=['nlpy/tokenization_whitespace.pyx'],
+        include_dirs=['nlpy', numpy.get_include()],
     )
-]
 
-# N-Gram Extensions
-#extensions.append(
-#    Extension(
-#        'nlpy.ngrams_',
-#        sources = ['nlpy/ngrams_.pyx'],
-#        include_dirs=[numpy.get_include()]
-#    )
-#)
+    ext_modules = [
+        whitespace_tokenizer_module,
+    ]
 
-requirements = [
-    "numpy",
-]
+    ext_modules = cythonize(ext_modules, language_level=sys.version_info[0])
+    return ext_modules
+
 
 setup(
-    name = "nlpy",
-    author = "Pablo Romano",
-    author_email = "pablo.romano42@gmail.com",
-    description = "Python Tools for Natural Language Processing",
-    version = "0.0",
-    packages = find_packages(),
-    install_requires = requirements,
-    ext_modules=extensions,
-    zip_safe = False
+    name="nlpy",
+    maintainer="Pablo Romano",
+    maintainer_email="pablo.romano42@gmail.com",
+    description="Natural Language Processing in Python",
+    ext_modules=get_extensions(),
+    packages=find_packages(),
+    zip_safe=False
 )
