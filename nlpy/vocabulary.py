@@ -208,6 +208,43 @@ class Vocabulary:
                     self._encoder[token] = index
                     self._decoder[index] = token
                     index += 1
+
+        index = len(self._encoder)
+        if self.unknown_token not in self._encoder and self.unknown_token is not None:
+            self.unknown_index = index
+            self._encoder[self.unknown_token] = index
+            self._decoder[index] = self.unknown_token
+            index += 1
+
+        if self.bos_token not in self._encoder and self.bos_token is not None:
+            self._encoder[self.bos_token] = index
+            self._decoder[index] = self.bos_token
+            index += 1
+
+        if self.eos_token not in self._encoder and self.eos_token is not None:
+            self._encoder[self.eos_token] = index
+            self._decoder[index] = self.eos_token
+            index += 1
+
+        if self.sep_token not in self._encoder and self.sep_token is not None:
+            self._encoder[self.sep_token] = index
+            self._decoder[index] = self.sep_token
+            index += 1
+
+        if self.pad_token not in self._encoder and self.pad_token is not None:
+            self._encoder[self.pad_token] = index
+            self._decoder[index] = self.pad_token
+            index += 1
+
+        if self.cls_token not in self._encoder and self.cls_token is not None:
+            self._encoder[self.cls_token] = index
+            self._decoder[index] = self.cls_token
+            index += 1
+        
+        if self.mask_token not in self._encoder and self.mask_token is not None:
+            self._encoder[self.mask_token] = index
+            self._decoder[index] = self.mask_token
+            index += 1
             
     def __getitem__(self, index):
         return self.decode(index)
