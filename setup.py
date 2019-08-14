@@ -13,8 +13,15 @@ def get_extensions():
         include_dirs=['nlpy', numpy.get_include()],
     )
 
+    basic_tokenizer_module = Extension(
+        'nlpy.tokenization_basic',
+        sources=['nlpy/tokenization_basic.pyx'],
+        include_dirs=['nlpy', numpy.get_include()],
+    )
+
     ext_modules = [
         whitespace_tokenizer_module,
+        basic_tokenizer_module
     ]
 
     ext_modules = cythonize(ext_modules, language_level=sys.version_info[0])
