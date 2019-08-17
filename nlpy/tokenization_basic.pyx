@@ -1,9 +1,8 @@
-
 from __future__ import unicode_literals, print_function
+import numpy as np
+cimport numpy as np
 from cymem.cymem cimport Pool
-from .vocabulary import Vocabulary
-import pathlib
-from collections import OrderedDict
+from .utils import prepare_vocabulary
 
 cdef class Tokenizer:
 
@@ -57,13 +56,17 @@ cdef class Tokenizer:
     cdef public object pad_token
     cdef public object cls_token
     cdef public object mask_token
+    cdef public int pad_length
+    cdef public object pad_type
+    cdef public object trunc_type
     cdef public mem
     
     def __init__(self, vocab=None, lowercase=False, special_tokens=None, 
                  pad_punctuation=True, remove_punctuation=False,
                  unknown_token='[UNK]', bos_token='[BOS]', eos_token='[EOS]',
                  sep_token='[SEP]', pad_token='[PAD]', cls_token='[CLS]', 
-                 mask_token='[MASK]'):
+                 mask_token='[MASK]', pad_length=-1, pad_type='right', 
+                 trunc_type='right'):
         
         # Prepare vocabulary and Vocabulary instance
         self.lowercase = lowercase
@@ -74,7 +77,20 @@ cdef class Tokenizer:
         self.pad_token = pad_token
         self.cls_token = cls_token
         self.mask_token = mask_token
-        self.vocab = self._prepare_vocab(vocab)
+        self.pad_length = pad_length
+        self.pad_type = pad_type
+        self.trunc_type = trunc_type
+        self.vocab = prepare_vocabulary(
+            vocab,
+            unknown_token = self.unknown_token,
+            bos_token = self.bos_token,
+            eos_token = self.eos_token,
+            sep_token = self.sep_token,
+            pad_token = self.pad_token,
+            cls_token = self.cls_token,
+            mask_token = self.mask_token,
+            special_tokens = self.special_tokens
+        )
         self.mem = Pool()
 
         # Handle special tokens and ensure handled as set for O(1) lookup
@@ -112,23 +128,10 @@ cdef class Tokenizer:
         self.remove_punctuation = remove_punctuation
 
     def tokenize(self, object document):
-            
-        # Ignore tokens for splitting
-        cdef object ignore_split = self.vocab + \
-            self.special_tokens + \
-            {
-                self.unknown_token,
-                self.bos_token,
-                self.eos_token,
-                self.sep_token,
-                self.pad_token,
-                self.cls_token,
-                self.mask_token
-            }
 
         cdef object split_tokens = []
         for token in document.split():
-            if token in ignore_split:
+            if token in self.vocab:
                 split_tokens.append(token)
             else:
                 if self.lowercase:
@@ -141,12 +144,73 @@ cdef class Tokenizer:
                     split_tokens.append(token)
         return split_tokens
 
+    def encode(self, object corpus):
+        
+        # Prepare corpus
+        if isinstance(corpus, str):
+            corpus = [corpus]
+        cdef int n_documents = len(corpus)
+
+        # Tokenize corpus
+        cdef object tokenized_corpus = [
+            self.tokenize(document)
+            for document in corpus
+        ]
+
+        # Determine maximum number of tokens in corpus
+        cdef np.ndarray n_tokens = np.array([
+            len(tokens)
+            for tokens in tokenized_corpus
+        ])
+        cdef int max_tokens = n_tokens.max()
+        
+        # Set pad-length to max_tokens if -1
+        cdef int pad_length = self.pad_length
+        if pad_length == -1:
+            pad_length = max_tokens
+            
+        # Create sequence array of pad_token
+        cdef np.ndarray sequence = np.empty((n_documents, pad_length), dtype=int)
+        sequence.fill(self.vocab.encode(self.pad_token))
+
+        cdef int i = 0
+        while i < n_documents:
+            if self.trunc_type == 'left':
+                tokens = tokenized_corpus[i][-pad_length:]
+            elif self.trunc_type == 'right':
+                tokens = tokenized_corpus[i][:pad_length]
+
+            if n_tokens[i] >= pad_length:
+                sequence[i] = [
+                    self.vocab.encode(token)
+                    for token in tokens
+                ]
+            else:
+                if self.pad_type == 'left':
+                    sequence[i, -(pad_length - n_tokens[i]):] = [
+                        self.vocab.encode(token)
+                        for token in tokens
+                    ]
+                elif self.pad_type == 'right':
+                    sequence[i, :n_tokens[i]] = [
+                        self.vocab.encode(token)
+                        for token in tokens
+                    ]
+            i += 1
+        return sequence
+
+    def decode(self, object sequence):
+        if isinstance(sequence[0], (tuple, list, np.ndarray)):
+           return [
+               self.vocab.decode(key)
+               for keys in sequence
+               for key in keys
+           ]
+        return [self.vocab.decode(key) for key in sequence]
+
     def pipe(self, object corpus):
-        cdef int n_docs = len(corpus)
-        cdef int doc_index = 0
-        while doc_index < n_docs:
-            yield self.tokenize(corpus[doc_index])
-            doc_index += 1
+        for document in corpus:
+            yield self.tokenize(document)
     
     def _process_punctuations(self, object token):
         
@@ -172,62 +236,5 @@ cdef class Tokenizer:
             sub_tokens.append(current_sub_token)
         return sub_tokens
 
-    def _prepare_vocab(self, vocab):
-        if isinstance(vocab, Vocabulary):
-            return vocab
-        elif isinstance(vocab, (list, tuple, set, dict, OrderedDict)) or vocab is None:
-            return Vocabulary(
-                vocab,
-                unknown_token = self.unknown_token,
-                bos_token = self.bos_token,
-                eos_token = self.eos_token,
-                sep_token = self.sep_token,
-                pad_token = self.pad_token,
-                cls_token = self.cls_token,
-                mask_token = self.mask_token,
-            )
-        elif isinstance(vocab, str):
-            vocab_path = pathlib.Path(vocab)
-
-            # Load vocab if file given
-            if vocab_path.is_file():
-                return Vocabulary.from_file(
-                    vocab_path,
-                    unknown_token = self.unknown_token,
-                    bos_token = self.bos_token,
-                    eos_token = self.eos_token,
-                    sep_token = self.sep_token,
-                    pad_token = self.pad_token,
-                    cls_token = self.cls_token,
-                    mask_token = self.mask_token,
-                )
-
-            # Maaaybe load vocab if directory given (with appropriate file inside)
-            if vocab_path.is_dir():
-                if (vocab_path/"vocab.txt").exists():
-                    vocab_file = str(vocab_path/"vocab.txt")
-                elif (vocab_path/"vocab.json").exists():
-                    vocab_file = str(vocab_path/"vocab.json")
-                else:
-                    error = "Expected file but directory given. Assumed vocab.txt/json but none found"
-                    raise ValueError(error)
-                return Vocabulary.from_file(
-                    vocab_file,
-                    unknown_token = self.unknown_token,
-                    bos_token = self.bos_token,
-                    eos_token = self.eos_token,
-                    sep_token = self.sep_token,
-                    pad_token = self.pad_token,
-                    cls_token = self.cls_token,
-                    mask_token = self.mask_token,
-                )
-        else:
-            raise ValueError("Unable to interpret vocabulary")
-
     def __call__(self, document):
         return self.tokenize(document)
-
-    def __repr__(self):
-        return "Tokenizer(lowercase={}, punctuations={}, special_tokens={}".format(
-            self.lowercase, self.punctuations, self.special_tokens
-        )
