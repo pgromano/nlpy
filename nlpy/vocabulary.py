@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import copy as copytool
 import json
+import yaml
 from pathlib import Path
 import re
 import warnings
@@ -18,26 +19,46 @@ class Vocabulary:
     unknown_token : str, optional
         The output string to use if a token is not in the vocabulary. Mostly
         for handling in encoding and decoding.
+    bos_token : str, optional
+        Beggining of sentence token.
+    eos_token : str, optional
+        End of sentence token.
+    sep_token : str, optional
+        BERT style sentence separation token.
+    cls_token : str, optional
+        BERT style classification token.
+    mask_token : str, optional
+        BERT style token mask identification token.
+    special_tokens : container, optional
+        Container (set, tuple, list, etc) with special tokens.
     """
  
-    def __init__(self, vocab=None, unknown_token=None, unknown_index=None, 
+    def __init__(self, vocab=None, unknown_token=None, pad_token=None, 
                  bos_token=None, eos_token=None, sep_token=None, 
-                 pad_token=None, cls_token=None, mask_token=None):
+                 cls_token=None, mask_token=None, special_tokens=None):
         
         # Set attributes
         self.unknown_token = unknown_token
-        self.unknown_index = unknown_index
+        self.unknown_index = None
         self.bos_token = bos_token
         self.eos_token = eos_token
         self.sep_token = sep_token
         self.pad_token = pad_token
         self.cls_token = cls_token
         self.mask_token = mask_token
+        self.special_tokens = special_tokens
         
         # Initialize model
         self._reset(vocab)
 
     def copy(self, deep=True):
+        """ Create copy of vocabulary 
+        
+        Arguments
+        ---------
+        deep : bool, optional
+            Whether or not to create a deep or shallow copy.
+        """
         if deep:
             return copytool.deepcopy(self)
         return copytool.copy(self)
@@ -100,16 +121,22 @@ class Vocabulary:
         index : int
             The index to decode into vocabulary token
         """
-        
-        if not isinstance(index, int):
-            raise ValueError("Index must be integer type")
             
         return self._decoder.get(index, self.unknown_token)
 
     @classmethod
     def from_file(cls, vocab_path, unknown_token=None, bos_token=None, 
                   eos_token=None, sep_token=None, pad_token=None, 
-                  cls_token=None, mask_token=None):
+                  cls_token=None, mask_token=None, special_tokens=None):
+
+        """ Load vocabulary from file
+
+        Arguments
+        ---------
+        vocab_path : str or file object
+            The path or file to read. Expecting either a ASCII text file (.txt)
+            or json. If no extension is given, then the file is read as json. 
+        """
         
         if isinstance(vocab_path, str):
             vocab_path = vocab_path.replace("~", str(Path.home()))
@@ -117,11 +144,12 @@ class Vocabulary:
         # Check file path
         vocab_path = Path(vocab_path)
         assert vocab_path.exists(), "Cannot find path to file"
-        assert vocab_path.is_file(), "Path provide paht to file"
         
         with open(vocab_path, 'r') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 vocab_dict = json.load(vocab_file)
+            elif vocab_path.suffix == '.yaml':
+                vocab_dict = yaml.load(vocab_path, Loader=yaml.SafeLoader)
             else:
                 vocab_dict = {
                     key.strip(): val
@@ -129,13 +157,14 @@ class Vocabulary:
                 }
         return cls(
             vocab_dict, 
-            unknown_token,
-            bos_token,
-            eos_token,
-            sep_token,
-            pad_token,
-            cls_token,
-            mask_token,
+            unknown_token = unknown_token,
+            bos_token = bos_token,
+            eos_token = eos_token,
+            sep_token = sep_token,
+            pad_token = pad_token,
+            cls_token = cls_token,
+            mask_token = mask_token,
+            special_tokens = special_tokens
         )
     
     def to_file(self, vocab_path, overwrite=False):
@@ -152,22 +181,59 @@ class Vocabulary:
         with open(vocab_path, 'w+') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 json.dump(self._encoder, vocab_file)
+            elif vocab_path.suffix == '.yaml':
+                yaml.dump(self._encoder, vocab_path)
             else:
-                for token in self:
+                for i in range(self.size):
+                    token = self.decode(i)
+                    index = self.encode(token)
+                    if index != i:
+                        raise ValueError(f"Error saving token \"{token}\". Inconsistent index!")
                     vocab_file.write(f"{token}\n")
  
-    def replace(self, old_token, new_token):
+    def replace(self, old_token, new_token, duplicate='raise'):
+        """ Replace tokens in vocabulary
+
+        Given an old and new token, replace the encode/decode mappings to the
+        new token at the same index. This is useful for pre-trained models
+        where old tokens are not relevant and fine-tuning with a new token
+        adds niche language capture.
+
+        Arguments
+        ---------
+        old_token : str
+            The token to be replaced
+        new_token : str
+            The token to replace with
+        duplicate : str, optional {'raise', 'warn', 'ignore'}
+            How to handle errors when new_token is already present in the
+            vocabulary.
+        """
+
         if old_token not in self._encoder:
             raise ValueError(f"\"{old_token}\" not found in vocabulary")
 
-        # Get original index value
-        val = self._encoder[old_token]
-        
-        # Remove old token from vocabulary
-        self._encoder.pop(old_token)
-        
-        # Add new token in vocabulary
-        self._encoder[new_token] = val
+        if new_token in self._encoder:
+            if duplicate == 'raise':
+                # Break it all
+                raise ValueError(f"\"{new_token}\" already in vocabulary!")
+            elif duplicate == 'warn':
+                # Warn the user
+                warnings.warn(f"\"{new_token}\" already in vocabulary! Skipping replacement")
+            elif duplicate == 'ignore':
+                # Do nothing, hope the user knows what they're doing
+                pass
+        else:
+
+            # Get original index value
+            val = self._encoder[old_token]
+            
+            # Remove old token from vocabulary
+            self._encoder.pop(old_token)
+            
+            # Add new token in vocabulary and udpate decoder
+            self._encoder[new_token] = val
+            self._decoder[val] = new_token
 
     @property
     def size(self):
@@ -209,42 +275,56 @@ class Vocabulary:
                     self._decoder[index] = token
                     index += 1
 
-        index = len(self._encoder)
-        if self.unknown_token not in self._encoder and self.unknown_token is not None:
+        if self.unknown_token is not None:
+            index = len(self._encoder)
             self.unknown_index = index
-            self._encoder[self.unknown_token] = index
-            self._decoder[index] = self.unknown_token
-            index += 1
+            if self.unknown_token not in self._encoder:
+                self._encoder[self.unknown_token] = index
+                self._decoder[index] = self.unknown_token
 
-        if self.bos_token not in self._encoder and self.bos_token is not None:
-            self._encoder[self.bos_token] = index
-            self._decoder[index] = self.bos_token
-            index += 1
+        if self.bos_token is not None:
+            index = len(self._encoder)
+            if self.bos_token not in self._encoder:
+                self._encoder[self.bos_token] = index
+                self._decoder[index] = self.bos_token
 
-        if self.eos_token not in self._encoder and self.eos_token is not None:
-            self._encoder[self.eos_token] = index
-            self._decoder[index] = self.eos_token
-            index += 1
+        if self.eos_token is not None:
+            index = len(self._encoder)
+            if self.eos_token not in self._encoder:
+                self._encoder[self.eos_token] = index
+                self._decoder[index] = self.eos_token
 
-        if self.sep_token not in self._encoder and self.sep_token is not None:
-            self._encoder[self.sep_token] = index
-            self._decoder[index] = self.sep_token
-            index += 1
+        if self.sep_token is not None:
+            index = len(self._encoder)
+            if self.sep_token not in self._encoder:
+                self._encoder[self.sep_token] = index
+                self._decoder[index] = self.sep_token
 
-        if self.pad_token not in self._encoder and self.pad_token is not None:
-            self._encoder[self.pad_token] = index
-            self._decoder[index] = self.pad_token
-            index += 1
+        if self.pad_token is not None:
+            index = len(self._encoder)
+            if self.pad_token not in self._encoder:
+                self._encoder[self.pad_token] = index
+                self._decoder[index] = self.pad_token
 
-        if self.cls_token not in self._encoder and self.cls_token is not None:
-            self._encoder[self.cls_token] = index
-            self._decoder[index] = self.cls_token
-            index += 1
-        
-        if self.mask_token not in self._encoder and self.mask_token is not None:
-            self._encoder[self.mask_token] = index
-            self._decoder[index] = self.mask_token
-            index += 1
+        if self.cls_token is not None:
+            index = len(self._encoder)
+            if self.cls_token not in self._encoder:
+                self._encoder[self.cls_token] = index
+                self._decoder[index] = self.cls_token
+
+        if self.mask_token is not None:
+            index = len(self._encoder)
+            if self.mask_token not in self._encoder:
+                self._encoder[self.mask_token] = index
+                self._decoder[index] = self.mask_token
+
+        if self.special_tokens is not None:
+            index = len(self._encoder)
+            for token in self.special_tokens:
+                if token not in self._encoder:
+                    self._encoder[token] = index
+                    self._decoder[index] = token
+                    index += 1
             
     def __getitem__(self, index):
         return self.decode(index)
