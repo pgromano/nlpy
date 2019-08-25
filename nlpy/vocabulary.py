@@ -148,7 +148,7 @@ class Vocabulary:
         with open(vocab_path, 'r') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 vocab_dict = json.load(vocab_file)
-            elif vocab_path.suffix == '.yaml':
+            elif vocab_path.suffix == '.yaml' or vocab_path.suffix == '.yml':
                 vocab_dict = yaml.load(vocab_path, Loader=yaml.SafeLoader)
             else:
                 vocab_dict = {
@@ -181,7 +181,7 @@ class Vocabulary:
         with open(vocab_path, 'w+') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 json.dump(self._encoder, vocab_file)
-            elif vocab_path.suffix == '.yaml':
+            elif vocab_path.suffix == '.yaml' or vocab_path.suffix == '.yml':
                 yaml.dump(self._encoder, vocab_path)
             else:
                 for i in range(self.size):
