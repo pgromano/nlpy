@@ -31,10 +31,17 @@ def get_extensions():
         include_dirs=['nlpy', numpy.get_include()],
     )
 
+    glove_module = Extension(
+        'nlpy.glove',
+        sources=['nlpy/glove.pyx'],
+        include_dirs=['nlpy', numpy.get_include()],
+    )
+
     ext_modules = [
         basic_tokenizer_module,
         bert_tokenizer_module,
         whitespace_tokenizer_module,
+        glove_module,
     ]
 
     ext_modules = cythonize(ext_modules, language_level=sys.version_info[0])
