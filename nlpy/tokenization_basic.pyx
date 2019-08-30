@@ -8,41 +8,106 @@ cdef class Tokenizer:
 
     """ Simple Tokenizer
 
-        Tokenizer splits on whitespaces as well as punctuations.
+    Tokenizer splits on whitespaces as well as punctuations.
 
-        Arguments
-        ---------
-        lowercase : bool, optional
-            Whether or not the Tokenizer should change casing of all text to lower
-        special_tokens : set
-            An iterable container of special tokens that should not be split. Note
-            this will only prevent splitting with regards to punctuations. The 
-            tokenizer first splits on whitespaces and then splits on punctuations.
-            Special tokens like "[ EXAMPLE ]" would still tokenize to ["[", 
-            "EXAMPLE", "]"]. While the tokenizer will accept any iterable container,
-            it is highly recommended to use a `set` or `dict` container as the 
-            lookup is O(1) compared to at least O(N) for `list` and `tuple`.
-        punctuations : str
-            A string (or iterable container) of all punctuatinos to separate in 
-            tokenization. For example given, punctuations="@" the text "$1.23@test"
-            would return ["$1.23", "@", "test"].
-
-        Examples
-        --------
-        After initializing the tokenizer, tokenization can be performed by either
-        running the `tokenize` method or by directly calling from the object itself.
-
-        ```python
-        from nlpy import WhitespaceTokenizer
-
-        tokenizer = WhitespaceTokenizer(lowercase=True, punctuations=".")
+    Arguments
+    ---------
+    vocab : file-like str or container, optional
+        The vocabulary which defines non-splitable tokens. This can be a path
+        to a vocabulary text or json file, or a set, tuple, list, dictionary
+        etc. 
+    lowercase : bool, optional
+        Whether or not tokens should be lowercased on tokenization.
+    pad_punctuation : str or bool, optional
+        Whether or not punctuations should be "padded" with whitespaces. For
+        tokenization this separates punctuations away from traditional word-like
+        tokens. If True then ".,?!" are padded and if False nothing is padded.
+        A string of characters can be passed as well to provided more specific
+        padding. In such cases, remove_punctuation should be set to False or
+        a string of remove characters should be provided to avoid overlap
+        between the two parameters.
+    remove_punctuation : str or bool, optional
+        Whether or not punctuations should be removed. If True and 
+        pad_punctuation is True or a string, then 
+        '"#$%&\'()*+-/:;<=>@[\\]^_`{|}~' are removed. If pad_punctuation is 
+        False and remove_punctuation is True then all punctuations are removed. 
+        Special care should be taken to ensure that pad_punctuation and 
+        remove_punctuation do not overlap!
+    special_tokens : container, optional
+        A secondary list of special tokens that are neither default special
+        tokens (unknown, mask, etc) nor present in the vocabulary. This can
+        be beneficial when starting from a predefined vocabulary that needs
+        additional tokens for niche language.
+    unknown_token : str, optional
+        The special token to handle out of vocabulary tokens. Defaults to [UNK].
+    bos_token : str, optional
+        Beginning of sentence token to identify sentence origin. Defaults to
+        [BOS].
+    eos_token : str, optional
+        End of sentence token to identify sentence origin. Defaults to [EOS].
+    sep_token : str, optional
+        Separation token. Defaults to [SEP].
+    pad_token : str, optional
+        The special token to handle encode padding tokens. Defaults to [PAD].
+    cls_token : str, optional
+        Classifiction token. Defaults to [CLS].
+    mask_token : str, optional
+        The special token to handle masked tokens. Defaults to [MASK].
+    pad_length : int, optional
+        The number of tokens per document. If less than pad_length, the document
+        is padded with pad_token. If -1, then the lenght of longest document in 
+        the corpus passed to `encode` is used. This is only for use with the 
+        encode/decode methods and as such is only intended when vocab is not 
+        None.
+    pad_type : str, optional {'left', 'right'}
+        Whether or not padding should be to the left or right of the document,
+        i.e. before or after respectively. This is only for use with the 
+        encode/decode methods and as such is only intended when vocab is not 
+        None.
+    trunc_type : str, optional {'left', 'right'}
+        In the case when document length is longer than pad_length, this 
+        determiens whether or not documents should be truncated to the left or
+        right of the document. This is only for use with the encode/decode 
+        methods and as such is only intended when vocab is not None.
         
-        >>> tokenizer.tokenize("THIS IS A TEST...")
-        ["this", "is", "a", "test", ".", ".", "."]
+    Examples
+    --------
+    After initializing the tokenizer, tokenization can be performed by either
+    running the `tokenize` method or by directly calling from the object itself.
 
-        >>> tokenizer("THIS IS A TEST...")
-        ["this", "is", "a", "test", ".", ".", "."]
-        """
+    ```python
+    from nlpy import BasicTokenizer
+
+    tokenizer = BasicTokenizer(
+        lowercase=True, 
+        pad_punctuation='.',
+        remove_punctuation='!'
+    )
+    
+    tokenizer.tokenize("THIS! IS A TEST...")
+    >>> ["this", "is", "a", "test", ".", ".", "."]
+
+    tokenizer("THIS! IS A TEST...")
+    >>> ["this", "is", "a", "test", ".", ".", "."]
+
+    The mehtod can then be encoded or decoded using the pad tokens
+
+    ```python
+    tokenizer = BasicTokenizer(
+        vocab = {'a', 'b', 'c'},
+        lowercase=True, 
+        pad_length=10,
+        pad_type='right'
+    )
+
+    tokenizer.encode("a b c aa bb cc!")
+    >>> [0, 1, 2, 3, 3, 3, 4, 4, 4, 4]
+
+    tokenizer.decode([0, 1, 2, 3, 3, 3, 4, 4, 4, 4])
+    >>> ["a", "b", "c", "[UNK]", "[UNK]", "[UNK]", "[PAD]", "[PAD]", "[PAD]", "[PAD]"]
+    ```
+    ```
+    """
 
     cdef public object vocab
     cdef public bint lowercase

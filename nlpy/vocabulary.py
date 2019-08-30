@@ -1,7 +1,6 @@
 from collections import OrderedDict
 import copy as copytool
 import json
-import yaml
 from pathlib import Path
 import re
 import warnings
@@ -20,22 +19,66 @@ class Vocabulary:
         The output string to use if a token is not in the vocabulary. Mostly
         for handling in encoding and decoding.
     bos_token : str, optional
-        Beggining of sentence token.
+        Beginning of sentence token to identify sentence origin. 
     eos_token : str, optional
-        End of sentence token.
+        End of sentence token to identify sentence origin. 
     sep_token : str, optional
-        BERT style sentence separation token.
+        Separation token
+    pad_token : str, optional
+        The special token to handle encode padding tokens. 
     cls_token : str, optional
-        BERT style classification token.
+        Classifiction token
     mask_token : str, optional
-        BERT style token mask identification token.
+        The special token to handle masked tokens. 
     special_tokens : container, optional
-        Container (set, tuple, list, etc) with special tokens.
+        A secondary list of special tokens that are neither default special
+        tokens (unknown, mask, etc) nor present in the vocabulary. This can
+        be beneficial when starting from a predefined vocabulary that needs
+        additional tokens for niche language.
+
+    Examples
+    --------
+
+    The Vocabulary can be thought of as a Python ordered dictionary with methods  
+    for handling forward and backward mappings.
+
+    ```python
+    from nlpy import Vocabulary
+
+    A = Vocabulary({'a', 'b', 'c'})
+    B = Vocabulary({'c', 'd', 'e'})
+    print(A, B)
+    >>> Vocabulary(size=3) Vocabulary(size=3)
+
+    A.encode('c'), A.decode(2)
+    >>> 2, 'c'
+
+    B.encode('c'), B.encode(0)
+    >>> 0, 'c'
+    ```
+
+    It also provides set operations, allowing for adding and subtracting 
+    vocabularies which reproduces set join and differences.
+
+    ```python
+    C = A + B
+    [(letter, letter in C) for letter in 'abcde']
+    >>> [('a', True), ('b', True), ('c', True), ('d', True), ('e', True)]
+
+    D = A - B
+    [(letter, letter in D) for letter in 'abcde']
+    >>> [('a', True), ('b', True), ('c', False), ('d', False), ('e', False)]
+
+    E = B - A
+    [(letter, letter in E) for letter in 'abcde']
+    >>> [('a', False), ('b', False), ('c', False), ('d', True), ('e', True)]
+    ```
     """
  
-    def __init__(self, vocab=None, unknown_token=None, pad_token=None, 
+    def __init__(self, vocab=None, unknown_token=None, 
                  bos_token=None, eos_token=None, sep_token=None, 
-                 cls_token=None, mask_token=None, special_tokens=None):
+                 pad_token=None, cls_token=None, mask_token=None,
+                 special_tokens=None):
         
         # Set attributes
         self.unknown_token = unknown_token
@@ -52,13 +95,6 @@ class Vocabulary:
         self._reset(vocab)
 
     def copy(self, deep=True):
-        """ Create copy of vocabulary 
-        
-        Arguments
-        ---------
-        deep : bool, optional
-            Whether or not to create a deep or shallow copy.
-        """
         if deep:
             return copytool.deepcopy(self)
         return copytool.copy(self)
@@ -121,6 +157,9 @@ class Vocabulary:
         index : int
             The index to decode into vocabulary token
         """
+        
+        #if not isinstance(index, int):
+        #    raise ValueError("Index must be integer type")
             
         return self._decoder.get(index, self.unknown_token)
 
@@ -128,15 +167,6 @@ class Vocabulary:
     def from_file(cls, vocab_path, unknown_token=None, bos_token=None, 
                   eos_token=None, sep_token=None, pad_token=None, 
                   cls_token=None, mask_token=None, special_tokens=None):
-
-        """ Load vocabulary from file
-
-        Arguments
-        ---------
-        vocab_path : str or file object
-            The path or file to read. Expecting either a ASCII text file (.txt)
-            or json. If no extension is given, then the file is read as json. 
-        """
         
         if isinstance(vocab_path, str):
             vocab_path = vocab_path.replace("~", str(Path.home()))
@@ -148,8 +178,6 @@ class Vocabulary:
         with open(vocab_path, 'r') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 vocab_dict = json.load(vocab_file)
-            elif vocab_path.suffix == '.yaml' or vocab_path.suffix == '.yml':
-                vocab_dict = yaml.load(vocab_path, Loader=yaml.SafeLoader)
             else:
                 vocab_dict = {
                     key.strip(): val
@@ -167,6 +195,7 @@ class Vocabulary:
             special_tokens = special_tokens
         )
     
+    #TODO: to_file does not write to file by index!!!
     def to_file(self, vocab_path, overwrite=False):
         if isinstance(vocab_path, str):
             vocab_path = vocab_path.replace("~", str(Path.home()))
@@ -181,8 +210,6 @@ class Vocabulary:
         with open(vocab_path, 'w+') as vocab_file:
             if vocab_path.suffix == '.json' or vocab_path.suffix == '':
                 json.dump(self._encoder, vocab_file)
-            elif vocab_path.suffix == '.yaml' or vocab_path.suffix == '.yml':
-                yaml.dump(self._encoder, vocab_path)
             else:
                 for i in range(self.size):
                     token = self.decode(i)
@@ -342,6 +369,23 @@ class Vocabulary:
         for token in self._encoder:
             yield token
  
+    def __eq__(self, vocab):
+        if hasattr(vocab, '_encoder'):
+            vocab = vocab._encoder
+
+        if len(self) != len(vocab):
+            return False
+
+        equality = all([
+            token in vocab
+            and self[token] == vocab[token]
+            for token in self
+        ])
+        return all(equality)
+
+    def __ne__(self, vocab):
+        return not self.__eq__(vocab)
+
     def __add__(self, vocab):
         add_vocab = self.copy(deep=True)
 
@@ -363,6 +407,32 @@ class Vocabulary:
                 sub_vocab._encoder.pop(token)
         sub_vocab._reset(sub_vocab._encoder)
         return sub_vocab
+
+    def __and__(self, vocab):
+        and_vocab = {}
+        index = 0
+        for token in self + vocab:
+            if token in self and token in vocab:
+                and_vocab[token] = index
+                index += 1
+        output = self.copy(deep=True)
+        output._reset(and_vocab)
+        return output
+
+    def __or__(self, vocab):
+        
+        or_vocab = {}
+        index = 0
+        for token in self + vocab:
+            if token in self and token not in vocab:
+                or_vocab[token] = index
+                index += 1
+            elif token not in self and token in vocab:
+                or_vocab[token] = index
+                index += 1
+        output = self.copy(deep=True)
+        output._reset(or_vocab)
+        return output
 
     def __str__(self):
         return "Vocabulary(size={})".format(self.size)
