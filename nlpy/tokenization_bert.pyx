@@ -34,6 +34,21 @@ cdef class BertTokenizer:
         etc. 
     lowercase : bool, optional
         Whether or not tokens should be lowercased on tokenization.
+    pad_punctuation : str or bool, optional
+        Whether or not punctuations should be "padded" with whitespaces. For
+        tokenization this separates punctuations away from traditional word-like
+        tokens. If True then ".,?!" are padded and if False nothing is padded.
+        A string of characters can be passed as well to provided more specific
+        padding. In such cases, remove_punctuation should be set to False or
+        a string of remove characters should be provided to avoid overlap
+        between the two parameters.
+    remove_punctuation : str or bool, optional
+        Whether or not punctuations should be removed. If True and 
+        pad_punctuation is True or a string, then 
+        '"#$%&\'()*+-/:;<=>@[\\]^_`{|}~' are removed. If pad_punctuation is 
+        False and remove_punctuation is True then all punctuations are removed. 
+        Special care should be taken to ensure that pad_punctuation and 
+        remove_punctuation do not overlap!
     special_tokens : container, optional
         A secondary list of special tokens that are neither default special
         tokens (unknown, mask, etc) nor present in the vocabulary. This can
@@ -42,11 +57,11 @@ cdef class BertTokenizer:
     unknown_token : str, optional
         The special token to handle out of vocabulary tokens. Defaults to [UNK].
     sep_token : str, optional
-        Steal from BERT. Defaults to [SEP].
+        Separation token. Defaults to [SEP].
     pad_token : str, optional
         The special token to handle encode padding tokens. Defaults to [PAD].
     cls_token : str, optional
-        Steal from BERT. Defaults to [CLS].
+        Classifiction token. Defaults to [CLS].
     mask_token : str, optional
         The special token to handle masked tokens. Defaults to [MASK].
     max_char_per_token : int, optional
@@ -66,6 +81,43 @@ cdef class BertTokenizer:
         In the case when document length is longer than pad_length, this 
         determiens whether or not documents should be truncated to the left or
         right of the document.
+
+    Examples
+    --------
+    After initializing the tokenizer, tokenization can be performed by either
+    running the `tokenize` method or by directly calling from the object itself.
+    The BERT tokenization scheme also uses the onepiece open-vocabulary method
+    to handle out-of-vocabulary tokens.
+
+    ```python
+    from nlpy import BertTokenizer
+
+    tokenizer = BertTokenizer(
+        lowercase=True, 
+        pad_punctuation='.',
+        remove_punctuation='!'
+    )
+
+    tokenizer("TESTING a testerful TeStaStIc TEST!")
+    >>> ['testing', 'a', 'test', '##er', '##ful', 'test', '##astic', 'test']
+
+    The mehtod can then be encoded or decoded using the pad tokens
+
+    ```python
+    tokenizer = BERTTokenizer(
+        vocab = {'a', 'b', 'c', "##a"},
+        lowercase=True, 
+        pad_length=10,
+        pad_type='right'
+    )
+
+    tokenizer.encode("a b c aa bb cc!")
+    >>> [0, 1, 2, 0, 3, 4, 4, 4, 5, 5, 5, 5]
+
+    tokenizer.decode([0, 1, 2, 0, 3, 4, 4, 4, 5, 5, 5, 5])
+    >>> ["a", "b", "c", "a", "##a", "[UNK]", "[UNK]", "[UNK]", "[PAD]", "[PAD]", "[PAD]", "[PAD]"]
+    ```
+    ```
     """
 
     cdef public object vocab

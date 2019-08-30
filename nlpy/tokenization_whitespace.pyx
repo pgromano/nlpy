@@ -13,21 +13,33 @@ cdef class WhitespaceTokenizer:
 
     Arguments
     ---------
+    vocab : file-like str or container, optional
+        The vocabulary which defines non-splitable tokens. This can be a path
+        to a vocabulary text or json file, or a set, tuple, list, dictionary
+        etc. 
     lowercase : bool, optional
-        Whether or not the Tokenizer should change casing of all text to lower
-    special_tokens : set
-        An iterable container of special tokens that should not be split. Note
-        this will only prevent splitting with regards to punctuations. The 
-        tokenizer first splits on whitespaces and then splits on punctuations.
-        Special tokens like "[ EXAMPLE ]" would still tokenize to ["[", 
-        "EXAMPLE", "]"]. While the tokenizer will accept any iterable container,
-        it is highly recommended to use a `set` or `dict` container as the 
-        lookup is O(1) compared to at least O(N) for `list` and `tuple`.
-    punctuations : str
-        A string (or iterable container) of all punctuatinos to separate in 
-        tokenization. For example given, punctuations="@" the text "$1.23@test"
-        would return ["$1.23", "@", "test"].
-
+        Whether or not tokens should be lowercased on tokenization.
+    unknown_token : str, optional
+        The special token to handle out of vocabulary tokens. Defaults to [UNK].
+    pad_token : str, optional
+        The special token to handle encode padding tokens. Defaults to [PAD].
+    pad_length : int, optional
+        The number of tokens per document. If less than pad_length, the document
+        is padded with pad_token. If -1, then the lenght of longest document in 
+        the corpus passed to `encode` is used. This is only for use with the 
+        encode/decode methods and as such is only intended when vocab is not 
+        None.
+    pad_type : str, optional {'left', 'right'}
+        Whether or not padding should be to the left or right of the document,
+        i.e. before or after respectively. This is only for use with the 
+        encode/decode methods and as such is only intended when vocab is not 
+        None.
+    trunc_type : str, optional {'left', 'right'}
+        In the case when document length is longer than pad_length, this 
+        determiens whether or not documents should be truncated to the left or
+        right of the document. This is only for use with the encode/decode 
+        methods and as such is only intended when vocab is not None.
+        
     Examples
     --------
     After initializing the tokenizer, tokenization can be performed by either
@@ -36,13 +48,30 @@ cdef class WhitespaceTokenizer:
     ```python
     from nlpy import WhitespaceTokenizer
 
-    tokenizer = WhitespaceTokenizer(lowercase=True, punctuations=".")
+    tokenizer = WhitespaceTokenizer(
+        lowercase=True
+    )
 
-    >>> tokenizer.tokenize("THIS IS A TEST...")
-    ["this", "is", "a", "test", ".", ".", "."]
+    tokenizer("a b c aa bb cc!")
+    >>> ["a", "b", "c", "aa", "bb", "cc!"]
+    ```
 
-    >>> tokenizer("THIS IS A TEST...")
-    ["this", "is", "a", "test", ".", ".", "."]
+    The mehtod can then be encoded or decoded using the pad tokens
+
+    ```python
+    tokenizer = WhitespaceTokenizer(
+        vocab = {'a', 'b', 'c'},
+        lowercase=True, 
+        pad_length=10,
+        pad_type='right'
+    )
+
+    tokenizer.encode("a b c aa bb cc!")
+    >>> [0, 1, 2, 3, 3, 3, 4, 4, 4, 4]
+
+    tokenizer.decode([0, 1, 2, 3, 3, 3, 4, 4, 4, 4])
+    >>> ["a", "b", "c", "[UNK]", "[UNK]", "[UNK]", "[PAD]", "[PAD]", "[PAD]", "[PAD]"]
+    ```
     """
 
     cdef public object vocab
