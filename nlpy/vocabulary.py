@@ -81,18 +81,29 @@ class Vocabulary:
                  special_tokens=None):
         
         # Set attributes
-        self.unknown_token = unknown_token
-        self.unknown_index = None
-        self.bos_token = bos_token
-        self.eos_token = eos_token
-        self.sep_token = sep_token
-        self.pad_token = pad_token
-        self.cls_token = cls_token
-        self.mask_token = mask_token
-        self.special_tokens = special_tokens
-        
-        # Initialize model
-        self._reset(vocab)
+        if isinstance(vocab, Vocabulary):
+            self.unknown_token = vocab.unknown_token
+            self.unknown_index = vocab.unknown_index
+            self.bos_token = vocab.bos_token
+            self.eos_token = vocab.eos_token
+            self.sep_token = vocab.sep_token
+            self.pad_token = vocab.pad_token
+            self.cls_token = vocab.cls_token
+            self.mask_token = vocab.mask_token
+            self.special_tokens = vocab.special_tokens
+            self._encoder = vocab._encoder
+            self._decoder = vocab._decoder
+        else:
+            self.unknown_token = unknown_token
+            self.unknown_index = None
+            self.bos_token = bos_token
+            self.eos_token = eos_token
+            self.sep_token = sep_token
+            self.pad_token = pad_token
+            self.cls_token = cls_token
+            self.mask_token = mask_token
+            self.special_tokens = special_tokens
+            self._reset(vocab)
 
     def copy(self, deep=True):
         if deep:
