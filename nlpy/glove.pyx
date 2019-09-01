@@ -6,6 +6,7 @@ import json
 cimport numpy as np
 from .vocabulary import Vocabulary
 from .utils import download_url
+from .token import TokenVector
 
 cdef object S3_BUCKET = "https://s3-us-west-2.amazonaws.com/nerd.ai-datasets-nlp/glove/"
 
@@ -64,11 +65,11 @@ cdef class GloVe:
     glove = GloVe.from_file("glove.6B.50d.txt")
 
     # Get word-embedding
-    X = glove('frog')
+    X = glove.transform('frog')
 
     # Find most similar
-    glove.most_similar(glove)
-    >>> ['frog']
+    glove.most_similar('frog')
+    >>> ['lizard']
     ```
 
     References
@@ -121,6 +122,33 @@ cdef class GloVe:
         self.vocab_size = self.vectors.shape[0]
         return self
 
+    def compute(self, formula):
+        """ Compute from formula """
+        
+        formula = formula.split()
+        operation = 'positive'
+
+        pos = []
+        neg = []
+        for token in formula:
+            if token == '+':
+                operation = 'positive'
+                continue
+            elif token == '-':
+                operation = 'negative'
+                continue
+
+            if operation == 'positive':
+                pos.append(token)
+            elif operation == 'negative':
+                neg.append(token)
+
+        vector = np.sum([self.transform(token) for token in pos], axis=0) - \
+                np.sum([self.transform(token) for token in neg], axis=0)
+
+        token = self.most_similar(vector, ignore=pos + neg)[0]
+        return TokenVector(self, token, vector)
+
     def encode(self, token):
         """ Return vocabulary index for a given token in vocabulary """
         return self.vocab.encode(token)
@@ -128,6 +156,13 @@ cdef class GloVe:
     def decode(self, index):
         """ Return vocabulary token for a given index in vocabulary """
         return self.vocab.decode(index)
+
+    def transform(self, token):
+        """Return embedding vector for a given token in vocabulary """
+        index = self.encode(token)
+        if index is None:
+            return np.zeros(self.embedding_size, dtype=float)
+        return self.vectors[index]
 
     def similarity(self, a, b):
         """ Cosine Similarity Score
@@ -149,10 +184,10 @@ cdef class GloVe:
             be from 0 to 1. 
         """
         if isinstance(a, str):
-            a = self(a)
+            a = self.transform(a)
 
         if isinstance(b, str):
-            b = self(b)
+            b = self.transform(b)
 
         score = np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
         score = (1 + score) / 2
@@ -197,7 +232,7 @@ cdef class GloVe:
         # Convert tokens to vectors
         if isinstance(X, str):
             ignore.add(X)
-            X = self(X)
+            X = self.transform(X)
 
         # Calcualte scores and rank-order
         scores = self.vectors.dot(X) / (self.vector_norms * np.linalg.norm(X))
@@ -235,7 +270,7 @@ cdef class GloVe:
             vocab_size, embedding_size = path.split('-')
 
             # Check for nlpy data folder
-            output_path = pathlib.Path('').home() / 'nlpy_data'
+            output_path = pathlib.Path('').home() / 'nlpy_data/glove'
             if not output_path.exists():
                 output_path.mkdir()
 
@@ -255,10 +290,12 @@ cdef class GloVe:
         else:
             path = pathlib.Path(path)
             if vocab_path is not None:
-                try:
-                    vocab = Vocabulary.from_file(vocab_path)
+                vocab = Vocabulary.from_file(vocab_path)
+                if path.suffix == '.txt':
+                    vectors = np.loadtxt(path)
+                elif path.suffix == '.npy':
                     vectors = np.load(path)
-                except:
+                else:
                     raise ValueError("Unable to interpet vectors")
 
             if path.exists():
@@ -308,8 +345,8 @@ cdef class GloVe:
         return torch_embedding
 
     def __call__(self, token):
-        index = self.encode(token)
-        return self.vectors[index]
+        vector = self.transform(token)
+        return TokenVector(self, token=token, vector=vector)
 
     def __getitem__(self, index):
         return self.vectors[index]
