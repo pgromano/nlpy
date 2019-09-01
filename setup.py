@@ -37,11 +37,18 @@ def get_extensions():
         include_dirs=['nlpy', numpy.get_include()],
     )
 
+    word2vec_module = Extension(
+        'nlpy.word2vec',
+        sources=['nlpy/word2vec.pyx'],
+        include_dirs=['nlpy', numpy.get_include()],
+    )
+
     ext_modules = [
         basic_tokenizer_module,
         bert_tokenizer_module,
         whitespace_tokenizer_module,
         glove_module,
+        word2vec_module,
     ]
 
     ext_modules = cythonize(ext_modules, language_level=sys.version_info[0])
